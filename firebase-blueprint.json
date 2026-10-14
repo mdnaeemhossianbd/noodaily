@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "Category": {
+      "collection": "categories",
+      "fields": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "nameBn": { "type": "string" },
+        "description": { "type": "string" },
+        "icon": { "type": "string" },
+        "order": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["id", "name", "isActive"]
+    },
+    "Subcategory": {
+      "collection": "subcategories",
+      "fields": {
+        "id": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "name": { "type": "string" },
+        "nameBn": { "type": "string" },
+        "description": { "type": "string" },
+        "order": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["id", "categoryId", "name", "isActive"]
+    },
+    "Post": {
+      "collection": "posts",
+      "fields": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "titleBn": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "arabicText": { "type": "string" },
+        "bengaliText": { "type": "string" },
+        "englishText": { "type": "string" },
+        "transliteration": { "type": "string" },
+        "mainContent": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "featuredImage": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "sourceReference": { "type": "string" },
+        "author": { "type": "string" },
+        "tags": { "type": "array" },
+        "isFeatured": { "type": "boolean" },
+        "isPublished": { "type": "boolean" },
+        "viewCount": { "type": "number" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["id", "title", "categoryId", "isPublished"]
+    },
+    "Quiz": {
+      "collection": "quizzes",
+      "fields": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "titleBn": { "type": "string" },
+        "description": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "questionCount": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["id", "title", "isActive"]
+    },
+    "QuizQuestion": {
+      "collection": "quizQuestions",
+      "fields": {
+        "id": { "type": "string" },
+        "quizId": { "type": "string" },
+        "question": { "type": "string" },
+        "questionBn": { "type": "string" },
+        "options": { "type": "array" },
+        "optionsBn": { "type": "array" },
+        "correctAnswerIndex": { "type": "number" },
+        "explanation": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["id", "quizId", "question", "correctAnswerIndex"]
+    },
+    "AppSettings": {
+      "collection": "appSettings",
+      "fields": {
+        "id": { "type": "string" },
+        "admobBannerEnabled": { "type": "boolean" },
+        "admobInterstitialEnabled": { "type": "boolean" },
+        "admobRewardedEnabled": { "type": "boolean" },
+        "admobAppOpenEnabled": { "type": "boolean" },
+        "admobInterstitialAdUnitId": { "type": "string" },
+        "interstitialMinIntervalMinutes": { "type": "number" },
+        "interstitialMinActions": { "type": "number" },
+        "interstitialMaxPerSession": { "type": "number" },
+        "interstitialCooldownSeconds": { "type": "number" },
+        "announcement": { "type": "string" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["id"]
+    },
+    "Admin": {
+      "collection": "admins",
+      "fields": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  }
+}

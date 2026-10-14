@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Noor Daily — এডমিন ড্যাশবোর্ড</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts for Bengali & Arabic -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body {
+      font-family: 'Hind Siliguri', sans-serif;
+    }
+    .font-arabic {
+      font-family: 'Amiri', serif;
+      direction: rtl;
+    }
+  </style>
+</head>
+<body class="bg-stone-100 text-stone-800 min-h-screen">
+  <div id="root"></div>
+
+  <!-- Firebase v10 SDK Modules -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    // Firebase Configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyCEVUKKUNApJuXNGHo64wChTWET9SCgOvQ",
+      authDomain: "gen-lang-client-0804603524.firebaseapp.com",
+      projectId: "gen-lang-client-0804603524",
+      storageBucket: "gen-lang-client-0804603524.firebasestorage.app",
+      messagingSenderId: "837173202121",
+      appId: "1:837173202121:android:6aa2a43789104db8119118"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    // Connect to named Firestore database
+    const db = getFirestore(app, "ai-studio-android-noordail-85775e46-d5e1-40e7-926e-368787f91c24");
+    const auth = getAuth(app);
+
+    window.NoorFirebase = {
+      db,
+      auth,
+      collection,
+      doc,
+      getDoc,
+      getDocs,
+      setDoc,
+      deleteDoc,
+      updateDoc,
+      serverTimestamp,
+      GoogleAuthProvider,
+      signInWithPopup,
+      onAuthStateChanged,
+      signOut
+    };
+    window.dispatchEvent(new Event('firebase-ready'));
+  </script>
+
+  <!-- React Application -->
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const DEFAULT_CATEGORIES = [
+      { id: "cat_quran", nameBn: "কুরআন মাজিদ", nameEn: "Holy Quran" },
+      { id: "cat_hadith", nameBn: "সহীহ হাদিস", nameEn: "Hadith" },
+      { id: "cat_dua", nameBn: "দৈনন্দিন দুআ ও জিকির", nameEn: "Dua & Zikr" },
+      { id: "cat_ramadan", nameBn: "রমজান ও রোজা", nameEn: "Ramadan & Fasting" },
+      { id: "cat_lifestyle", nameBn: "ইসলামিক জীবন বিধান", nameEn: "Islamic Lifestyle" }
+    ];
+
+    function App() {
+      const [firebaseReady, setFirebaseReady] = useState(false);
+      const [activeTab, setActiveTab] = useState('admob'); // 'admob' (default), 'posts', 'new_post'
+      const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
+      const [loading, setLoading] = useState(false);
+
+      // AdMob Settings State
+      const [admobSettings, setAdmobSettings] = useState({
+        admobAppId: "ca-app-pub-6596350151078116~4467168043",
+        admobBannerEnabled: true,
+        admobBannerAdUnitId: "ca-app-pub-6596350151078116/3154086375",
+        admobInterstitialEnabled: false,
+        admobInterstitialAdUnitId: "",
+        admobRewardedEnabled: true,
+        admobRewardedAdUnitId: "ca-app-pub-6596350151078116/2848807925",
+        admobAppOpenEnabled: true,
+        admobAppOpenAdUnitId: "ca-app-pub-6596350151078116/5690593680",
+        interstitialMinIntervalMinutes: 3,
+        interstitialMinActions: 4
+      });
+      const [savingAdmob, setSavingAdmob] = useState(false);
+
+      // Posts State
+      const [posts, setPosts] = useState([]);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+      const [editingPost, setEditingPost] = useState(null);
+
+      useEffect(() => {
+        if (window.NoorFirebase) {
+          setFirebaseReady(true);
+        } else {
+          const handler = () => setFirebaseReady(true);
+          window.addEventListener('firebase-ready', handler);
+          return () => window.removeEventListener('firebase-ready', handler);
+        }
+      }, []);
+
+      useEffect(() => {
+        if (firebaseReady) {
+          loadAdmobSettings();
+          loadPosts();
+        }
+      }, [firebaseReady]);
+
+      const showNotification = (text, type = 'success') => {
+        setStatusMsg({ text, type });
+        setTimeout(() => setStatusMsg({ text: '', type: '' }), 5000);
+      };
+
+      const loadAdmobSettings = async () => {
+        try {
+          const { db, doc, getDoc } = window.NoorFirebase;
+          const snap = await getDoc(doc(db, "appSettings", "default"));
+          if (snap.exists()) {
+            setAdmobSettings(prev => ({ ...prev, ...snap.data() }));
+          }
+        } catch (err) {
+          console.error("AdMob settings fetch error:", err);
+        }
+      };
+
+      const handleSaveAdmob = async (e) => {
+        e.preventDefault();
+        setSavingAdmob(true);
+        try {
+          const { db, doc, setDoc, serverTimestamp } = window.NoorFirebase;
+          const payload = {
+            id: "default",
+            admobAppId: admobSettings.admobAppId.trim(),
+            admobBannerEnabled: Boolean(admobSettings.admobBannerEnabled),
+            admobBannerAdUnitId: admobSettings.admobBannerAdUnitId.trim(),
+            admobInterstitialEnabled: Boolean(admobSettings.admobInterstitialEnabled),
+            admobInterstitialAdUnitId: admobSettings.admobInterstitialAdUnitId.trim(),
+            admobRewardedEnabled: Boolean(admobSettings.admobRewardedEnabled),
+            admobRewardedAdUnitId: admobSettings.admobRewardedAdUnitId.trim(),
+            admobAppOpenEnabled: Boolean(admobSettings.admobAppOpenEnabled),
+            admobAppOpenAdUnitId: admobSettings.admobAppOpenAdUnitId.trim(),
+            interstitialMinIntervalMinutes: Number(admobSettings.interstitialMinIntervalMinutes) || 3,
+            interstitialMinActions: Number(admobSettings.interstitialMinActions) || 4,
+            updatedAt: serverTimestamp()
+          };
+
+          await setDoc(doc(db, "appSettings", "default"), payload, { merge: true });
+          showNotification("সফল! Google AdMob বিজ্ঞাপন আইডি সফলভাবে ফায়ারবেসে সেভ হয়েছে এবং নূর ডেইলি অ্যাপে রিমোটলি কার্যকর হয়েছে!");
+        } catch (err) {
+          showNotification("সেভ করতে সমস্যা হয়েছে: " + err.message, "error");
+        } finally {
+          setSavingAdmob(false);
+        }
+      };
+
+      const loadPosts = async () => {
+        setLoading(true);
+        try {
+          const { db, collection, getDocs } = window.NoorFirebase;
+          const snap = await getDocs(collection(db, "posts"));
+          const list = [];
+          snap.forEach(d => {
+            list.push({ id: d.id, ...d.data() });
+          });
+          setPosts(list);
+        } catch (err) {
+          console.error("Posts fetch error:", err);
+          showNotification("পোস্ট লোড করতে ব্যর্থ: " + err.message, "error");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleDeletePost = async (postId, postTitle) => {
+        if (!confirm(`আপনি কি নিশ্চিত যে "${postTitle}" পোস্টটি মুছে ফেলতে চান?`)) return;
+        try {
+          const { db, doc, deleteDoc } = window.NoorFirebase;
+          await deleteDoc(doc(db, "posts", postId));
+          setPosts(prev => prev.filter(p => p.id !== postId));
+          showNotification("পোস্টটি সফলভাবে মুছে ফেলা হয়েছে!");
+        } catch (err) {
+          showNotification("পোস্ট মুছতে ব্যর্থ: " + err.message, "error");
+        }
+      };
+
+      const handleEditPost = (post) => {
+        setEditingPost(post);
+        setActiveTab('new_post');
+      };
+
+      return (
+        <div className="max-w-6xl mx-auto px-4 py-8">
+          {/* Header */}
+          <header className="bg-emerald-900 text-white rounded-2xl p-6 sm:p-8 shadow-xl mb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">🕌</span>
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">নূর ডেইলি — এডমিন ড্যাশবোর্ড</h1>
+                    <p className="text-emerald-200 text-sm mt-0.5">Google AdMob বিজ্ঞাপন আইডি ও ইসলামিক পোস্ট নিয়ন্ত্রণ কেন্দ্র</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-800 text-emerald-100 border border-emerald-700">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  ক্লাউড ফায়ারবেস সংযুক্ত
+                </span>
+              </div>
+            </div>
+
+            {/* Notification alert */}
+            {statusMsg.text && (
+              <div className={`mt-4 p-4 rounded-xl text-sm font-semibold flex items-center justify-between ${
+                statusMsg.type === 'error' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white shadow-lg'
+              }`}>
+                <span>{statusMsg.type === 'error' ? '⚠️ ' : '✅ '}{statusMsg.text}</span>
+                <button onClick={() => setStatusMsg({ text: '', type: '' })} className="text-white hover:opacity-80">✕</button>
+              </div>
+            )}
+
+            {/* Navigation Tabs */}
+            <div className="flex flex-wrap gap-2 mt-6 pt-4 border-t border-emerald-800/80">
+              <button
+                onClick={() => { setActiveTab('admob'); setEditingPost(null); }}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition flex items-center gap-2 ${
+                  activeTab === 'admob'
+                    ? 'bg-amber-400 text-stone-900 shadow-md'
+                    : 'bg-emerald-800/60 hover:bg-emerald-800 text-white'
+                }`}
+              >
+                📱 Google AdMob বিজ্ঞাপন আইডি (AdMob IDs)
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('posts'); setEditingPost(null); }}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition flex items-center gap-2 ${
+                  activeTab === 'posts'
+                    ? 'bg-amber-400 text-stone-900 shadow-md'
+                    : 'bg-emerald-800/60 hover:bg-emerald-800 text-white'
+                }`}
+              >
+                📚 সংরক্ষিত পোস্ট তালিকা ({posts.length})
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('new_post'); setEditingPost(null); }}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition flex items-center gap-2 ${
+                  activeTab === 'new_post' && !editingPost
+                    ? 'bg-amber-400 text-stone-900 shadow-md'
+                    : 'bg-emerald-800/60 hover:bg-emerald-800 text-white'
+                }`}
+              >
+                ✍️ {editingPost ? 'পোস্ট সম্পাদনা' : 'নতুন ইসলামিক পোস্ট লিখুন'}
+              </button>
+            </div>
+          </header>
+
+          {/* TAB 1: AdMob Settings */}
+          {activeTab === 'admob' && (
+            <div className="bg-white rounded-2xl border border-stone-200 shadow-md p-6 sm:p-8">
+              <div className="border-b border-stone-200 pb-4 mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-stone-900 flex items-center gap-2">
+                  <span>📱</span> Google AdMob বিজ্ঞাপন আইডি কনফিগারেশন
+                </h2>
+                <p className="text-stone-600 text-sm mt-1">
+                  এখানে আপনি আপনার AdMob বিজ্ঞাপন ইউনিট আইডি পরিবর্তন ও নিয়ন্ত্রণ করতে পারবেন। আইডি সেভ করার সাথে সাথে নূর ডেইলি অ্যাপে সরাসরি আপডেট হয়ে যাবে।
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveAdmob} className="space-y-6 max-w-4xl">
+                {/* App ID (Read-only reference) */}
+                <div className="bg-stone-50 p-4 rounded-xl border border-stone-200">
+                  <label className="block text-xs font-bold uppercase text-stone-600 mb-1">Google AdMob App ID (অ্যাপ্লিকেশন আইডি)</label>
+                  <input
+                    type="text"
+                    value={admobSettings.admobAppId}
+                    onChange={e => setAdmobSettings({ ...admobSettings, admobAppId: e.target.value })}
+                    className="w-full bg-white border border-stone-300 rounded-lg p-2.5 text-sm font-mono text-stone-800 focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-xs text-stone-500 mt-1">এটি AndroidManifest.xml এ অন্তর্ভুক্ত মূল অ্যাপ্লিকেশন আইডি।</p>
+                </div>
+
+                {/* Banner Ad Section */}
+                <div className="p-5 rounded-xl border border-stone-200 bg-white shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-stone-800 flex items-center gap-2">
+                        <span>🏷️</span> ব্যানার বিজ্ঞাপন (Banner Ad)
+                      </h3>
+                      <p className="text-xs text-stone-500">হোমস্ক্রিন ও রিডারের নিচে প্রদর্শিত স্থায়ী ব্যানার</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={admobSettings.admobBannerEnabled}
+                        onChange={e => setAdmobSettings({ ...admobSettings, admobBannerEnabled: e.target.checked })}
+                        className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-semibold">{admobSettings.admobBannerEnabled ? 'বিজ্ঞাপন চালু' : 'বন্ধ'}</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">ব্যানার Ad Unit ID:</label>
+                    <input
+                      type="text"
+                      placeholder="ca-app-pub-6596350151078116/3154086375"
+                      value={admobSettings.admobBannerAdUnitId}
+                      onChange={e => setAdmobSettings({ ...admobSettings, admobBannerAdUnitId: e.target.value })}
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-mono text-stone-800 focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Interstitial Ad Section */}
+                <div className="p-5 rounded-xl border border-stone-200 bg-white shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-stone-800 flex items-center gap-2">
+                        <span>🖼️</span> ইন্টারস্টিশিয়াল বিজ্ঞাপন (Interstitial Full-screen Ad)
+                      </h3>
+                      <p className="text-xs text-stone-500">ন্যাভিগেশন বা পোস্ট পরিবর্তনের সময় পূর্ণস্ক্রিন বিজ্ঞাপন</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={admobSettings.admobInterstitialEnabled}
+                        onChange={e => setAdmobSettings({ ...admobSettings, admobInterstitialEnabled: e.target.checked })}
+                        className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-semibold">{admobSettings.admobInterstitialEnabled ? 'বিজ্ঞাপন চালু' : 'বন্ধ'}</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">ইন্টারস্টিশিয়াল Ad Unit ID:</label>
+                    <input
+                      type="text"
+                      placeholder="ca-app-pub-6596350151078116/xxxxxxxxxx"
+                      value={admobSettings.admobInterstitialAdUnitId}
+                      onChange={e => setAdmobSettings({ ...admobSettings, admobInterstitialAdUnitId: e.target.value })}
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-mono text-stone-800 focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Rewarded Video Ad Section */}
+                <div className="p-5 rounded-xl border border-stone-200 bg-white shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-stone-800 flex items-center gap-2">
+                        <span>🎁</span> রিওয়ার্ডেড বিজ্ঞাপন (Rewarded Video Ad)
+                      </h3>
+                      <p className="text-xs text-stone-500">কুইজ সমাধান ও বিশেষ বরকতময় আমল আনলক করতে ভিডিও বিজ্ঞাপন</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={admobSettings.admobRewardedEnabled}
+                        onChange={e => setAdmobSettings({ ...admobSettings, admobRewardedEnabled: e.target.checked })}
+                        className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-semibold">{admobSettings.admobRewardedEnabled ? 'বিজ্ঞাপন চালু' : 'বন্ধ'}</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">রিওয়ার্ডেড Ad Unit ID:</label>
+                    <input
+                      type="text"
+                      placeholder="ca-app-pub-6596350151078116/2848807925"
+                      value={admobSettings.admobRewardedAdUnitId}
+                      onChange={e => setAdmobSettings({ ...admobSettings, admobRewardedAdUnitId: e.target.value })}
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-mono text-stone-800 focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* App Open Ad Section */}
+                <div className="p-5 rounded-xl border border-stone-200 bg-white shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-stone-800 flex items-center gap-2">
+                        <span>🚀</span> অ্যাপ ওপেন বিজ্ঞাপন (App Open Ad)
+                      </h3>
+                      <p className="text-xs text-stone-500">অ্যাপ চালু বা ব্যাকগ্রাউন্ড থেকে ফিরে আসার সময় বিজ্ঞাপন</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={admobSettings.admobAppOpenEnabled}
+                        onChange={e => setAdmobSettings({ ...admobSettings, admobAppOpenEnabled: e.target.checked })}
+                        className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-semibold">{admobSettings.admobAppOpenEnabled ? 'বিজ্ঞাপন চালু' : 'বন্ধ'}</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">অ্যাপ ওপেন Ad Unit ID:</label>
+                    <input
+                      type="text"
+                      placeholder="ca-app-pub-6596350151078116/5690593680"
+                      value={admobSettings.admobAppOpenAdUnitId}
+                      onChange={e => setAdmobSettings({ ...admobSettings, admobAppOpenAdUnitId: e.target.value })}
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-mono text-stone-800 focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  disabled={savingAdmob}
+                  className="w-full py-4 px-6 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-base shadow-lg transition flex items-center justify-center gap-2"
+                >
+                  {savingAdmob ? "সংরক্ষণ করা হচ্ছে..." : "💾 Google AdMob বিজ্ঞাপন আইডি ক্লাউডে সংরক্ষণ করুন"}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 2: Posts List */}
+          {activeTab === 'posts' && (
+            <div className="bg-white rounded-2xl border border-stone-200 shadow-md p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4 mb-6">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-stone-900 flex items-center gap-2">
+                    <span>📚</span> ক্লাউডে সংরক্ষিত পোস্ট তালিকা ({posts.length})
+                  </h2>
+                  <p className="text-stone-600 text-sm mt-1">এই পোস্টগুলো নূর ডেইলি অ্যাপে ব্যবহারকারীরা সরাসরি পড়তে পারেন।</p>
+                </div>
+                <button
+                  onClick={() => { setActiveTab('new_post'); setEditingPost(null); }}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-sm transition"
+                >
+                  ➕ নতুন পোস্ট লিখুন
+                </button>
+              </div>
+
+              {/* Search & Filter */}
+              <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                <input
+                  type="text"
+                  placeholder="শিরোনাম বা বিষয়বস্তু দিয়ে খুঁজুন..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="flex-1 border border-stone-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+                <select
+                  value={selectedCategoryFilter}
+                  onChange={e => setSelectedCategoryFilter(e.target.value)}
+                  className="border border-stone-300 rounded-xl p-2.5 text-sm bg-white text-stone-700 focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="all">সকল ক্যাটাগরি</option>
+                  {DEFAULT_CATEGORIES.map(c => (
+                    <option key={c.id} value={c.id}>{c.nameBn}</option>
+                  ))}
+                </select>
+              </div>
+
+              {loading ? (
+                <div className="text-center py-12 text-stone-500">পোস্ট তালিকা লোড করা হচ্ছে...</div>
+              ) : posts.length === 0 ? (
+                <div className="text-center py-12 bg-stone-50 rounded-xl border border-dashed border-stone-300">
+                  <span className="text-4xl block mb-2">📝</span>
+                  <p className="text-stone-600 font-semibold">কোনো কাস্টম পোস্ট পাওয়া যায়নি।</p>
+                  <button
+                    onClick={() => setActiveTab('new_post')}
+                    className="mt-4 px-4 py-2 bg-emerald-700 text-white rounded-xl text-sm font-bold"
+                  >
+                    প্রথম পোস্ট তৈরি করুন
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {posts
+                    .filter(p => {
+                      const matchQuery = (p.titleBn || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (p.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (p.mainContent || '').toLowerCase().includes(searchQuery.toLowerCase());
+                      const matchCat = selectedCategoryFilter === 'all' || p.categoryId === selectedCategoryFilter;
+                      return matchQuery && matchCat;
+                    })
+                    .map(post => {
+                      const catName = DEFAULT_CATEGORIES.find(c => c.id === post.categoryId)?.nameBn || post.categoryId || 'সাধারণ';
+                      return (
+                        <div key={post.id} className="p-4 sm:p-5 border border-stone-200 rounded-xl hover:border-emerald-300 transition bg-stone-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                {catName}
+                              </span>
+                              {post.isFeatured && (
+                                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                                  ★ ফিচার্ড
+                                </span>
+                              )}
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                post.isPublished !== false ? 'bg-green-100 text-green-800' : 'bg-stone-200 text-stone-700'
+                              }`}>
+                                {post.isPublished !== false ? '✓ প্রকাশিত' : 'খসড়া'}
+                              </span>
+                            </div>
+                            <h3 className="font-bold text-base sm:text-lg text-stone-900">{post.titleBn || post.title}</h3>
+                            {post.subtitle && <p className="text-xs text-stone-600">{post.subtitle}</p>}
+                            {post.sourceReference && <p className="text-xs text-stone-400">সূত্র: {post.sourceReference}</p>}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleEditPost(post)}
+                              className="px-3 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                            >
+                              ✏️ সম্পাদনা
+                            </button>
+                            <button
+                              onClick={() => handleDeletePost(post.id, post.titleBn || post.title)}
+                              className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                            >
+                              🗑️ মুছুন
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: Post Editor */}
+          {activeTab === 'new_post' && (
+            <PostEditor
+              initialPost={editingPost}
+              categories={DEFAULT_CATEGORIES}
+              onSaved={() => {
+                loadPosts();
+                setActiveTab('posts');
+                showNotification("পোস্টটি সফলভাবে ক্লাউডে সংরক্ষিত হয়েছে এবং নূর ডেইলি অ্যাপে দেখা যাচ্ছে!");
+              }}
+              onCancel={() => {
+                setEditingPost(null);
+                setActiveTab('posts');
+              }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // Unified, Bug-Free Post Editor
+    function PostEditor({ initialPost, categories, onSaved, onCancel }) {
+      const isEditing = Boolean(initialPost);
+      const [titleBn, setTitleBn] = useState(initialPost?.titleBn || "");
+      const [title, setTitle] = useState(initialPost?.title || "");
+      const [subtitle, setSubtitle] = useState(initialPost?.subtitle || "");
+      const [categoryId, setCategoryId] = useState(initialPost?.categoryId || "cat_quran");
+      const [arabicText, setArabicText] = useState(initialPost?.arabicText || "");
+      const [bengaliText, setBengaliText] = useState(initialPost?.bengaliText || "");
+      const [transliteration, setTransliteration] = useState(initialPost?.transliteration || "");
+      const [mainContent, setMainContent] = useState(initialPost?.mainContent || "");
+      const [sourceReference, setSourceReference] = useState(initialPost?.sourceReference || "");
+      const [author, setAuthor] = useState(initialPost?.author || "Noor Daily Editorial Board");
+      const [isFeatured, setIsFeatured] = useState(initialPost?.isFeatured || false);
+      const [isPublished, setIsPublished] = useState(initialPost?.isPublished !== false);
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!titleBn.trim() && !title.trim()) {
+          alert("দয়া করে পোস্টের বাংলা বা ইংরেজি শিরোনাম লিখুন");
+          return;
+        }
+
+        setSubmitting(true);
+        try {
+          const { db, doc, setDoc, serverTimestamp } = window.NoorFirebase;
+          const postId = isEditing ? initialPost.id : ("post_" + Date.now());
+
+          const postPayload = {
+            id: postId,
+            title: title.trim() || titleBn.trim(),
+            titleBn: titleBn.trim() || title.trim(),
+            subtitle: subtitle.trim(),
+            categoryId: categoryId,
+            subcategoryId: initialPost?.subcategoryId || "",
+            arabicText: arabicText.trim(),
+            bengaliText: bengaliText.trim(),
+            englishText: "",
+            transliteration: transliteration.trim(),
+            mainContent: mainContent.trim() || bengaliText.trim() || subtitle.trim(),
+            sourceReference: sourceReference.trim(),
+            author: author.trim() || "Noor Daily Editorial Board",
+            featuredImage: initialPost?.featuredImage || "",
+            audioUrl: initialPost?.audioUrl || "",
+            tags: initialPost?.tags || ["Islamic"],
+            isFeatured: Boolean(isFeatured),
+            isPublished: Boolean(isPublished),
+            viewCount: initialPost?.viewCount || 0,
+            updatedAt: serverTimestamp()
+          };
+
+          if (!isEditing) {
+            postPayload.createdAt = serverTimestamp();
+          }
+
+          // Save directly to Firestore collection 'posts'
+          await setDoc(doc(db, "posts", postId), postPayload, { merge: true });
+          onSaved();
+        } catch (err) {
+          alert("পোস্ট সেভ করতে সমস্যা হয়েছে: " + err.message);
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="bg-white rounded-2xl border border-stone-200 shadow-md p-6 sm:p-8">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-4 mb-6">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-stone-900">
+                {isEditing ? `পোস্ট সম্পাদনা: ${initialPost.titleBn || initialPost.title}` : "নতুন ইসলামিক পোস্ট বা পাঠ লিখুন"}
+              </h2>
+              <p className="text-stone-500 text-xs mt-1">সব তথ্য পূরণ করে নিচের সেভ বাটনে ক্লিক করুন</p>
+            </div>
+            <button
+              onClick={onCancel}
+              className="text-stone-500 hover:text-stone-800 text-sm font-semibold"
+            >
+              ✕ বাতিল
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5 max-w-4xl">
+            {/* Title Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">বাংলা শিরোনাম *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: সূরা আল-ফাতিহা — ফজিলত ও তাৎপর্য"
+                  value={titleBn}
+                  onChange={e => setTitleBn(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">ইংরেজি শিরোনাম (ঐচ্ছিক)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Surah Al-Fatihah — Virtues & Meaning"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Subtitle & Category */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">উপশিরোনাম বা সারসংক্ষেপ</label>
+                <input
+                  type="text"
+                  placeholder="সংক্ষিপ্ত বিবরণ বা সারমর্ম..."
+                  value={subtitle}
+                  onChange={e => setSubtitle(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">ক্যাটাগরি *</label>
+                <select
+                  value={categoryId}
+                  onChange={e => setCategoryId(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-emerald-500"
+                >
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.nameBn} ({c.nameEn})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Arabic Text */}
+            <div>
+              <label className="block text-xs font-bold text-stone-700 mb-1">মূল আরবি টেক্সট (আয়াত বা হাদিস)</label>
+              <textarea
+                rows="3"
+                placeholder="بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+                value={arabicText}
+                onChange={e => setArabicText(e.target.value)}
+                className="w-full border border-stone-300 rounded-lg p-3 text-lg font-arabic bg-amber-50/30 focus:ring-2 focus:ring-emerald-500"
+              ></textarea>
+            </div>
+
+            {/* Bengali Meaning & Pronunciation */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">বাংলা অর্থ ও অনুবাদ</label>
+                <textarea
+                  rows="3"
+                  placeholder="বাংলা অনুবাদ..."
+                  value={bengaliText}
+                  onChange={e => setBengaliText(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">উচ্চারণ (Transliteration)</label>
+                <textarea
+                  rows="3"
+                  placeholder="বাংলা বা ইংরেজি উচ্চারণ..."
+                  value={transliteration}
+                  onChange={e => setTransliteration(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                ></textarea>
+              </div>
+            </div>
+
+            {/* Main Content */}
+            <div>
+              <label className="block text-xs font-bold text-stone-700 mb-1">বিস্তারিত বিষয়বস্তু / ব্যাখ্যা / শিক্ষা</label>
+              <textarea
+                rows="5"
+                placeholder="পোস্টের সম্পূর্ণ বিবরণ ও তাফসীর..."
+                value={mainContent}
+                onChange={e => setMainContent(e.target.value)}
+                className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-emerald-500"
+              ></textarea>
+            </div>
+
+            {/* Source Reference & Author */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">রেফারেন্স বা সূত্র</label>
+                <input
+                  type="text"
+                  placeholder="যেমন: সহীহ বুখারী, হাদিস নং ১ / সূরা আল-বাকারাহ"
+                  value={sourceReference}
+                  onChange={e => setSourceReference(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">লেখক বা সংকলক</label>
+                <input
+                  type="text"
+                  placeholder="Noor Daily Editorial Board"
+                  value={author}
+                  onChange={e => setAuthor(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Switches */}
+            <div className="flex flex-wrap gap-6 pt-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isFeatured}
+                  onChange={e => setIsFeatured(e.target.checked)}
+                  className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                />
+                <span className="text-sm font-semibold text-stone-800">হোমস্ক্রিনে ফিচার করুন (Featured)</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isPublished}
+                  onChange={e => setIsPublished(e.target.checked)}
+                  className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                />
+                <span className="text-sm font-semibold text-stone-800">সরাসরি প্রকাশ করুন (Published)</span>
+              </label>
+            </div>
+
+            {/* Submit & Cancel */}
+            <div className="flex gap-4 pt-4 border-t border-stone-200">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex-1 py-3.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-base shadow-md transition flex items-center justify-center gap-2"
+              >
+                {submitting ? "সংরক্ষণ করা হচ্ছে..." : (isEditing ? "💾 আপডেট সংরক্ষণ করুন" : "💾 পোস্ট প্রকাশ করুন")}
+              </button>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-6 py-3.5 border border-stone-300 hover:bg-stone-100 text-stone-700 font-bold rounded-xl text-sm transition"
+              >
+                বাতিল
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
